@@ -1245,6 +1245,169 @@ function animateTopology() {
     });
 }
 
+// ─── Security Testing ───────────────────────────────────────
+
+const SEC_CATEGORY_META = {
+    web_attacks: { label: 'Web Attacks (OWASP)', badge: 'vuln', icon: '\u26A0\uFE0F' },
+    malware_threats: { label: 'Malware / Threat Prevention', badge: 'malware', icon: '\uD83D\uDEE1\uFE0F' },
+    url_filtering: { label: 'URL Filtering', badge: 'url', icon: '\uD83C\uDF10' },
+};
+
+let _securityCatalog = null;
+let _securityPollActive = false;
+
+async function loadSecurityCatalog() {
+    try {
+        const resp = await fetch('/api/security/catalog');
+        _securityCatalog = await resp.json();
+        renderSecurityPanel();
+    } catch(e) {
+        document.getElementById('security-panel').innerHTML =
+            '<div style="color:var(--text-secondary);font-size:12px;padding:12px;text-align:center">Failed to load security test catalog</div>';
+    }
+}
+
+function renderSecurityPanel() {
+    const panel = document.getElementById('security-panel');
+    if (!_securityCatalog) { panel.innerHTML = ''; return; }
+
+    let html = '';
+    for (const [cat, tests] of Object.entries(_securityCatalog)) {
+        const meta = SEC_CATEGORY_META[cat] || { label: cat, badge: 'vuln', icon: '' };
+        html += `<div class="security-category">
+            <div class="security-category-header" onclick="toggleSecurityCategory('${cat}')">
+                <div class="security-category-title">
+                    <span>${meta.icon}</span>
+                    <span>${meta.label}</span>
+                    <span class="security-category-badge ${meta.badge}">${tests.length} tests</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px">
+                    <span class="security-select-all" onclick="event.stopPropagation();toggleSecCategorySelect('${cat}')">[Select All]</span>
+                    <span class="chevron" id="chevron-sec-${cat}" style="font-size:10px;color:var(--text-secondary)">&#9660;</span>
+                </div>
+            </div>
+            <div class="security-test-list" id="sec-list-${cat}">
+                <div class="security-test-row header">
+                    <span></span>
+                    <span>Test</span>
+                    <span>PAN-OS Feature</span>
+                    <span>Expected</span>
+                    <span>Result</span>
+                </div>`;
+        for (const t of tests) {
+            html += `<div class="security-test-row" id="sec-row-${t.id}">
+                <input type="checkbox" class="sec-checkbox" data-cat="${cat}" data-id="${t.id}" checked style="width:14px;height:14px;accent-color:var(--accent)">
+                <div>
+                    <div class="security-test-name">${t.name}</div>
+                    <div class="security-test-desc">${t.description}</div>
+                </div>
+                <span class="security-test-feature">${t.panos_feature}</span>
+                <span style="font-size:10px;color:var(--text-secondary);text-transform:uppercase">${t.expected_action}</span>
+                <span id="sec-verdict-${t.id}"><span class="sec-verdict pending">--</span></span>
+            </div>`;
+        }
+        html += '</div></div>';
+    }
+    panel.innerHTML = html;
+}
+
+function toggleSecurityCategory(cat) {
+    const list = document.getElementById('sec-list-' + cat);
+    const chevron = document.getElementById('chevron-sec-' + cat);
+    if (list) list.style.display = list.style.display === 'none' ? '' : 'none';
+    if (chevron) chevron.classList.toggle('collapsed');
+}
+
+function toggleSecCategorySelect(cat) {
+    const boxes = document.querySelectorAll(`.sec-checkbox[data-cat="${cat}"]`);
+    const allChecked = Array.from(boxes).every(b => b.checked);
+    boxes.forEach(b => b.checked = !allChecked);
+}
+
+function getSelectedSecurityTests() {
+    return Array.from(document.querySelectorAll('.sec-checkbox:checked')).map(b => b.dataset.id);
+}
+
+async function startSecurityTests() {
+    const tests = getSelectedSecurityTests();
+    if (!tests.length) { addLog('[SECURITY] No tests selected'); return; }
+    const config = {
+        http_port: parseInt(document.getElementById('sec-http-port').value) || 9999,
+        https_port: parseInt(document.getElementById('sec-https-port').value) || 443,
+        interval: parseFloat(document.getElementById('sec-interval').value) || 2,
+    };
+    const res = await apiPost('/api/security/start', { tests, config });
+    addLog('[SECURITY] ' + res.message);
+    if (res.ok) startSecurityPolling();
+}
+
+async function stopSecurityTests() {
+    const res = await apiPost('/api/security/stop', {});
+    addLog('[SECURITY] ' + res.message);
+}
+
+async function clearSecurityResults() {
+    await apiPost('/api/security/clear', {});
+    // Reset all verdict badges
+    document.querySelectorAll('[id^="sec-verdict-"]').forEach(el => {
+        el.innerHTML = '<span class="sec-verdict pending">--</span>';
+    });
+    document.getElementById('security-summary').style.display = 'none';
+    addLog('[SECURITY] Results cleared');
+}
+
+function startSecurityPolling() {
+    if (_securityPollActive) return;
+    _securityPollActive = true;
+    pollSecurityStatus();
+}
+
+async function pollSecurityStatus() {
+    if (!_securityPollActive) return;
+    try {
+        const resp = await fetch('/api/security/status');
+        const data = await resp.json();
+        updateSecurityUI(data);
+        if (!data.running && data.summary.pending === 0) {
+            _securityPollActive = false;
+            return;
+        }
+    } catch(e) {}
+    setTimeout(pollSecurityStatus, 1500);
+}
+
+function updateSecurityUI(data) {
+    // Update verdict badges
+    for (const r of data.results) {
+        const el = document.getElementById('sec-verdict-' + r.test_id);
+        if (!el) continue;
+        let cls = 'pending', label = '--';
+        if (r.verdict === 'PASS') { cls = 'pass'; label = 'PASS'; }
+        else if (r.verdict === 'FAIL') { cls = 'fail'; label = 'FAIL'; }
+        else if (r.verdict === 'ERROR') { cls = 'error'; label = 'ERROR'; }
+        else if (r.verdict === 'PENDING') { cls = 'pending'; label = 'PENDING'; }
+        el.innerHTML = `<span class="sec-verdict ${cls}" title="${r.detail || ''}">${label}</span>`;
+    }
+
+    // Update summary bar
+    const s = data.summary;
+    const summaryEl = document.getElementById('security-summary');
+    if (s.total > 0) {
+        summaryEl.style.display = '';
+        const runLabel = data.running ? '<span style="color:var(--accent);font-weight:600">Running...</span>' : '<span style="color:var(--text-secondary)">Complete</span>';
+        summaryEl.innerHTML = `<div class="security-summary-bar">
+            ${runLabel}
+            <span style="color:var(--text-secondary);font-size:11px">Total: <strong>${s.total}</strong></span>
+            <span class="security-summary-item"><span class="dot green"></span> Pass: ${s.passed}</span>
+            <span class="security-summary-item"><span class="dot red"></span> Fail: ${s.failed}</span>
+            ${s.errors > 0 ? `<span class="security-summary-item"><span class="dot yellow"></span> Error: ${s.errors}</span>` : ''}
+            ${s.pending > 0 ? `<span class="security-summary-item"><span class="dot gray"></span> Pending: ${s.pending}</span>` : ''}
+        </div>`;
+    } else {
+        summaryEl.style.display = 'none';
+    }
+}
+
 // ─── Init ──────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1253,6 +1416,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadSourceIps();
     loadProxy();
     loadFtpFileList();
+    loadSecurityCatalog();
     document.getElementById('source-ip-toggle').addEventListener('change', toggleSourceIpConfig);
     autoRefreshInterval = setInterval(() => { pollStatus(); pollRouterStatus(); }, 2000);
     setInterval(loadFtpFileList, 10000);

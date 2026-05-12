@@ -1,8 +1,10 @@
+import io
 import os
 import json
 import time
 import threading
-from flask import Flask, request, jsonify
+import zipfile
+from flask import Flask, request, jsonify, Response
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
@@ -186,6 +188,40 @@ def generate_data(size_mb):
     return app.response_class(
         generate(), mimetype='application/octet-stream',
         headers={'Content-Disposition': f'attachment; filename=testdata_{size_mb}mb.bin'})
+
+
+# ─── EICAR Anti-Malware Test (HTTPS via nginx) ─────────────
+
+EICAR_STRING = b'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*'
+
+_eicar_zip_buf = io.BytesIO()
+with zipfile.ZipFile(_eicar_zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+    zf.writestr('eicar.com', EICAR_STRING.decode())
+EICAR_ZIP_BYTES = _eicar_zip_buf.getvalue()
+
+
+@app.route('/eicar')
+def eicar():
+    """Serve EICAR test file over HTTPS (through nginx SSL termination)."""
+    with stats_lock:
+        http_stats['downloads'] += 1
+    _mark_dirty()
+    return Response(
+        EICAR_STRING,
+        mimetype='application/octet-stream',
+        headers={'Content-Disposition': 'attachment; filename="eicar.com"'})
+
+
+@app.route('/eicar.zip')
+def eicar_zip():
+    """Serve EICAR inside a ZIP archive over HTTPS."""
+    with stats_lock:
+        http_stats['downloads'] += 1
+    _mark_dirty()
+    return Response(
+        EICAR_ZIP_BYTES,
+        mimetype='application/zip',
+        headers={'Content-Disposition': 'attachment; filename="eicar.zip"'})
 
 
 if __name__ == '__main__':

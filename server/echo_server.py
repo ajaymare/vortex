@@ -2,6 +2,7 @@
 Network services: HTTP server (port 9999) and DNS forwarder (port 9998).
 Replaces raw echo with recognizable App-ID protocols for Palo Alto firewalls.
 """
+import io
 import json
 import os
 import socket
@@ -10,8 +11,19 @@ import threading
 import signal
 import sys
 import time
+import zipfile
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
+from urllib.parse import urlparse, parse_qs, unquote
+
+# EICAR anti-malware test string (standard, universally recognized — NOT actual malware)
+EICAR_STRING = b'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*'
+
+# Pre-build EICAR zip in memory
+_eicar_zip_buf = io.BytesIO()
+with zipfile.ZipFile(_eicar_zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+    zf.writestr('eicar.com', EICAR_STRING.decode())
+EICAR_ZIP_BYTES = _eicar_zip_buf.getvalue()
 
 STATS_FILE = '/tmp/echo_stats.json'
 stats_lock = threading.Lock()
@@ -42,7 +54,50 @@ class TrafficHTTPHandler(BaseHTTPRequestHandler):
             stats['http']['gets'] += 1
             stats['http']['active'] += 1
         try:
-            if self.path.startswith('/download'):
+            parsed = urlparse(self.path)
+            path = parsed.path
+
+            if path == '/echo':
+                # Echo query parameter back as HTML — firewall inspects both request URL and response
+                params = parse_qs(parsed.query)
+                payload = params.get('payload', [''])[0]
+                body = (
+                    f'<html><head><title>Echo</title></head>'
+                    f'<body><h1>Echo Response</h1>'
+                    f'<div id="payload">{payload}</div>'
+                    f'</body></html>'
+                ).encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                with stats_lock:
+                    stats['http']['bytes_sent'] += len(body)
+
+            elif path == '/eicar':
+                # Serve EICAR anti-malware test file
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/octet-stream')
+                self.send_header('Content-Disposition', 'attachment; filename="eicar.com"')
+                self.send_header('Content-Length', str(len(EICAR_STRING)))
+                self.end_headers()
+                self.wfile.write(EICAR_STRING)
+                with stats_lock:
+                    stats['http']['bytes_sent'] += len(EICAR_STRING)
+
+            elif path == '/eicar.zip':
+                # Serve EICAR inside a zip archive
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/zip')
+                self.send_header('Content-Disposition', 'attachment; filename="eicar.zip"')
+                self.send_header('Content-Length', str(len(EICAR_ZIP_BYTES)))
+                self.end_headers()
+                self.wfile.write(EICAR_ZIP_BYTES)
+                with stats_lock:
+                    stats['http']['bytes_sent'] += len(EICAR_ZIP_BYTES)
+
+            elif path.startswith('/download'):
                 # Parse size parameter (KB)
                 size_kb = 1
                 if '?' in self.path:
@@ -86,15 +141,32 @@ class TrafficHTTPHandler(BaseHTTPRequestHandler):
             body = self.rfile.read(content_length) if content_length > 0 else b''
             with stats_lock:
                 stats['http']['bytes_recv'] += len(body)
-            response = json.dumps({
-                'status': 'ok',
-                'bytes_received': len(body),
-            }).encode()
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Content-Length', str(len(response)))
-            self.end_headers()
-            self.wfile.write(response)
+
+            parsed = urlparse(self.path)
+            if parsed.path == '/echo':
+                # Echo POST body back as HTML — firewall inspects request body and response
+                payload = body.decode('utf-8', errors='replace')
+                response = (
+                    f'<html><head><title>Echo</title></head>'
+                    f'<body><h1>Echo Response</h1>'
+                    f'<div id="payload">{payload}</div>'
+                    f'</body></html>'
+                ).encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html')
+                self.send_header('Content-Length', str(len(response)))
+                self.end_headers()
+                self.wfile.write(response)
+            else:
+                response = json.dumps({
+                    'status': 'ok',
+                    'bytes_received': len(body),
+                }).encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(response)))
+                self.end_headers()
+                self.wfile.write(response)
             with stats_lock:
                 stats['http']['bytes_sent'] += len(response)
         finally:
