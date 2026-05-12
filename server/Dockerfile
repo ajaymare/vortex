@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx openssl iperf3 iputils-ping vsftpd openssh-server supervisor iproute2 \

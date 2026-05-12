@@ -14,8 +14,9 @@ Traffic Generator — a Docker-based network traffic generation and testing tool
 ## Key Files
 
 ### Client
-- `client/app.py` — Flask routes: `/api/start`, `/api/stop`, `/api/status`, `/api/topology`, `/api/routers`, `/api/shaping`, `/api/source_ips`, `/api/proxy`
+- `client/app.py` — Flask routes: `/api/start`, `/api/stop`, `/api/status`, `/api/topology`, `/api/routers`, `/api/shaping`, `/api/source_ips`, `/api/proxy`, `/api/security/*`
 - `client/traffic_engine.py` — Protocol handlers: HTTPS, HTTP, DNS, iperf3, FTP, SSH, hping3, External HTTPS. `TrafficJob` dataclass, `TrafficEngine` class with start/stop/status
+- `client/security_engine.py` — Security testing engine: OWASP web attacks, malware/threat patterns, URL filtering. `SecurityTestEngine` class with test catalog, sequential execution, firewall detection heuristics
 - `client/network_shaper.py` — Linux tc/netem for local impairment (latency, jitter, loss, bandwidth). Auto-detects interface via `ip route get`. Source IP aliases for multi-client simulation
 - `client/router_shaper.py` — SSH-based remote router impairment. `RouterConnection` dataclass, `RouterManager` class. Modes: healthy, impaired, link_down. Presets: degraded_wan, voice_sla, video_sla
 - `client/static/app.js` — Dashboard JS: protocol cards, topology rendering (vis.js), router controls, source IP config, logs
@@ -27,9 +28,9 @@ Traffic Generator — a Docker-based network traffic generation and testing tool
 
 ### Server
 - `server/dashboard.py` — Server dashboard (port 8082): server stats tab + multi-client control tabs. Client registry with add/remove. Proxies API calls to registered clients
-- `server/echo_server.py` — HTTP server (port 9999) + DNS forwarder (port 53 via dnsmasq). Replaces raw echo with App-ID recognizable protocols
+- `server/echo_server.py` — HTTP server (port 9999) + DNS server (port 53). Echo endpoint for web attack reflection, EICAR test file endpoints, download endpoint
 - `server/stats_collector.py` — Collects FTP/SSH stats from logs, writes to JSON files for dashboard consumption
-- `server/app.py` — nginx backend serving test content
+- `server/app.py` — nginx backend serving test content + EICAR endpoints for HTTPS-based anti-malware testing
 - `server/Dockerfile` — nginx + iperf3 + dnsmasq + vsftpd + openssh + Python 3.11
 - `server/nginx.conf` — HTTP (80) + HTTPS (443) with HTTP/2, self-signed cert
 - `server/vsftpd.conf` — FTP server config (anonymous + ftpuser)
@@ -143,6 +144,15 @@ SERVER_HOST=<server-ip> docker compose -f docker-compose.client.yml up -d
 - Server dashboard registers clients by name + URL
 - Each client tab proxies all API calls (`/api/client/<name>/...`) through server to client
 - Enables centralized control of multiple traffic generators
+
+### Security Testing (`security_engine.py`)
+- Separate engine from TrafficEngine — tests run once per case with pass/fail verdicts vs continuous traffic
+- Three categories: Web Attacks (SQL injection, XSS, command injection, path traversal, Log4Shell), Malware/Threats (EICAR HTTP/HTTPS/ZIP, C2 callback, malicious User-Agent), URL Filtering (PAN-DB test URLs)
+- Detection heuristics: ConnectionReset/timeout = blocked by firewall (PASS), HTTP 200 with echoed payload = passed through (FAIL), block page markers = blocked (PASS)
+- EICAR over HTTPS only detected if firewall has SSL Decryption enabled
+- URL Filtering test URLs use PAN-DB test URLs (`urlfiltering.paloaltonetworks.com/test-*`), configurable at runtime
+- API: `/api/security/catalog`, `/api/security/start`, `/api/security/stop`, `/api/security/status`, `/api/security/clear`
+- Echo server endpoints: `GET/POST /echo` (reflects payloads for web attack testing), `GET /eicar`, `GET /eicar.zip`
 
 ### Container Capabilities
 - `NET_ADMIN`: required for tc/netem, ip addr, iptables

@@ -7,6 +7,7 @@ import subprocess
 from flask import Flask, render_template, jsonify, request
 
 from traffic_engine import TrafficEngine
+from security_engine import SecurityTestEngine
 import network_shaper
 from router_shaper import router_manager
 
@@ -15,6 +16,7 @@ logging.basicConfig(level=logging.INFO,
 
 app = Flask(__name__)
 engine = TrafficEngine()
+security_engine = SecurityTestEngine()
 
 SERVER_HOST = os.environ.get('SERVER_HOST', 'server')
 
@@ -450,6 +452,40 @@ def source_ips():
     else:
         ips = network_shaper.get_alias_ips()
         return jsonify({"enabled": len(ips) > 0, "ips": ips})
+
+
+# ─── Security Testing ─────────────────────────────────────
+
+@app.route('/api/security/catalog')
+def security_catalog():
+    return jsonify(security_engine.get_catalog())
+
+
+@app.route('/api/security/start', methods=['POST'])
+def security_start():
+    data = _get_json()
+    test_ids = data.get('tests', [])
+    config = data.get('config', {})
+    config.setdefault('host', SERVER_HOST)
+    ok, msg = security_engine.start(test_ids, config)
+    return jsonify({"ok": ok, "message": msg}), 200 if ok else 409
+
+
+@app.route('/api/security/stop', methods=['POST'])
+def security_stop():
+    ok, msg = security_engine.stop()
+    return jsonify({"ok": ok, "message": msg})
+
+
+@app.route('/api/security/status')
+def security_status():
+    return jsonify(security_engine.get_status())
+
+
+@app.route('/api/security/clear', methods=['POST'])
+def security_clear():
+    security_engine.clear()
+    return jsonify({"ok": True, "message": "Security results cleared"})
 
 
 if __name__ == '__main__':
