@@ -1405,16 +1405,22 @@ async function clientLoadRouters(clientName) {
             return;
         }
         container.innerHTML = routers.map(function(r) { return clientRenderRouterCard(clientName, r); }).join('');
-        // Render ISP timelines and check for running scenarios
+        // Render ISP timelines and immediately re-apply cached status
         for (var i = 0; i < routers.length; i++) {
             var r = routers[i];
             if (r.connected && r.selected_interface) {
                 clientRenderRouterIspTimeline(clientName, r.router_id);
+                // Re-apply cached status immediately to prevent flickering
+                var cachedKey = clientName + ':' + r.router_id;
+                var cachedSt = _clientIspLastStatus[cachedKey];
+                if (cachedSt && cachedSt.running) {
+                    clientUpdateRouterIspUI(clientName, r.router_id, cachedSt);
+                }
                 (function(rid) {
                     var key = clientName + ':' + rid;
                     if (!_clientIspPollingRouters[key]) {
                         fetch('/api/client/' + clientName + '/routers/' + rid + '/scenario/status').then(function(resp) { return resp.json(); }).then(function(st) {
-                            if (st.running) clientStartRouterIspPolling(clientName, rid);
+                            if (st.running) { _clientIspLastStatus[key] = st; clientUpdateRouterIspUI(clientName, rid, st); clientStartRouterIspPolling(clientName, rid); }
                         }).catch(function() {});
                     }
                 })(r.router_id);
@@ -1472,6 +1478,9 @@ async function clientPollRouterStatus(clientName) {
         for (var i = 0; i < routers.length; i++) {
             if (routers[i].connected && routers[i].selected_interface) {
                 clientRenderRouterIspTimeline(clientName, routers[i].router_id);
+                var ck = clientName + ':' + routers[i].router_id;
+                var cs = _clientIspLastStatus[ck];
+                if (cs && cs.running) clientUpdateRouterIspUI(clientName, routers[i].router_id, cs);
             }
         }
     } catch(e) {}
@@ -2394,6 +2403,7 @@ async function clientStopPcapReplay(name) {
 // ISP Scenario helpers (router-based)
 var _clientIspScenarios = {};
 var _clientIspPollingRouters = {};
+var _clientIspLastStatus = {};
 
 function _ispPhaseSeverity(phase) {
     var score = (phase.latency_ms / 50) + (phase.packet_loss_pct * 2) +
@@ -2448,6 +2458,7 @@ async function clientStopRouterIspScenario(name, routerId) {
     });
     var key = name + ':' + routerId;
     delete _clientIspPollingRouters[key];
+    delete _clientIspLastStatus[key];
     var timeline = document.getElementById('c-' + name + '-rtr-' + routerId + '-isp-timeline');
     if (timeline) timeline.querySelectorAll('.isp-phase').forEach(function(el) { el.classList.remove('active', 'dimmed'); });
     var statusEl = document.getElementById('c-' + name + '-rtr-' + routerId + '-isp-status');
@@ -2467,8 +2478,9 @@ async function clientPollRouterIspStatus(name, routerId) {
     try {
         var resp = await fetch('/api/client/' + name + '/routers/' + routerId + '/scenario/status');
         var st = await resp.json();
+        _clientIspLastStatus[key] = st;
         clientUpdateRouterIspUI(name, routerId, st);
-        if (!st.running) { delete _clientIspPollingRouters[key]; return; }
+        if (!st.running) { delete _clientIspPollingRouters[key]; delete _clientIspLastStatus[key]; return; }
     } catch(e) {}
     setTimeout(function() { clientPollRouterIspStatus(name, routerId); }, 2000);
 }
