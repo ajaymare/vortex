@@ -449,6 +449,14 @@ BLOCK_PAGE_MARKERS = [
     'Web Page Blocked',
     'Access to this website',
     'Security policy',
+    'This page has been blocked',
+    'request was blocked',
+    'blocked by security',
+    'threat detected',
+    'action="reset-both"',
+    'action="reset-server"',
+    'action="reset-client"',
+    'action="drop"',
 ]
 
 # ─── Attack Payloads ────────────────────────────────────────
@@ -958,7 +966,8 @@ class SecurityTestEngine:
                 resp = requests.post(url, data=payload,
                     headers=test.headers or {}, timeout=10)
             else:
-                resp = requests.get(url, params={'payload': payload},
+                raw_url = f'{url}?payload={payload}'
+                resp = requests.get(raw_url,
                     headers=test.headers or {}, timeout=10)
             return self._analyze_response(test, resp, payload,
                 url=url, method=method, sent_payload=payload)
@@ -1031,25 +1040,25 @@ class SecurityTestEngine:
 
         elif test.id == 'ssrf':
             method = 'GET'
+            raw_url = f'{url}?url={payload}&payload={payload}'
             try:
-                resp = requests.get(url, params={'url': payload, 'payload': payload}, timeout=10)
+                resp = requests.get(raw_url, timeout=10)
                 return self._analyze_response(test, resp, '169.254',
-                    url=url, method=method, sent_payload=payload)
+                    url=raw_url, method=method, sent_payload=payload)
             except (requests.ConnectionError, requests.Timeout, OSError) as e:
                 return self._blocked_result(test, str(e),
-                    url=url, method=method, sent_payload=payload)
+                    url=raw_url, method=method, sent_payload=payload)
 
         elif test.id == 'open_redirect':
             method = 'GET'
+            raw_url = f'{url}?redirect={payload}&url={payload}&next={payload}'
             try:
-                resp = requests.get(url,
-                    params={'redirect': payload, 'url': payload, 'next': payload},
-                    timeout=10, allow_redirects=False)
+                resp = requests.get(raw_url, timeout=10, allow_redirects=False)
                 return self._analyze_response(test, resp, 'evil.example.com',
-                    url=url, method=method, sent_payload=payload)
+                    url=raw_url, method=method, sent_payload=payload)
             except (requests.ConnectionError, requests.Timeout, OSError) as e:
                 return self._blocked_result(test, str(e),
-                    url=url, method=method, sent_payload=payload)
+                    url=raw_url, method=method, sent_payload=payload)
 
         elif test.id == 'info_disclosure':
             # Try multiple common info disclosure paths
@@ -1072,14 +1081,14 @@ class SecurityTestEngine:
 
         elif test.id == 'file_inclusion':
             method = 'GET'
+            raw_url = f'{url}?page={payload}&file={payload}'
             try:
-                resp = requests.get(url, params={'page': payload, 'file': payload},
-                    timeout=10)
+                resp = requests.get(raw_url, timeout=10)
                 return self._analyze_response(test, resp, 'evil.example.com',
-                    url=url, method=method, sent_payload=payload)
+                    url=raw_url, method=method, sent_payload=payload)
             except (requests.ConnectionError, requests.Timeout, OSError) as e:
                 return self._blocked_result(test, str(e),
-                    url=url, method=method, sent_payload=payload)
+                    url=raw_url, method=method, sent_payload=payload)
 
         elif test.id == 'path_traversal':
             trav_url = f'http://{host}:{port}/{payload}'
@@ -1093,15 +1102,17 @@ class SecurityTestEngine:
                     url=trav_url, method=method, sent_payload=payload)
 
         else:
-            # Default: send payload as GET parameter (sqli, xss, cmdi, ssti, ldap, xpath, blind_sqli)
+            # Default: send payload as raw GET parameter (sqli, xss, cmdi, ssti, ldap, xpath, blind_sqli)
+            # Use raw URL to preserve attack characters — do NOT use params= which URL-encodes them
             method = 'GET'
+            raw_url = f'{url}?payload={payload}'
             try:
-                resp = requests.get(url, params={'payload': payload}, timeout=10)
+                resp = requests.get(raw_url, timeout=10)
                 return self._analyze_response(test, resp, payload,
-                    url=url + '?payload=' + payload, method=method, sent_payload=payload)
+                    url=raw_url, method=method, sent_payload=payload)
             except (requests.ConnectionError, requests.Timeout, OSError) as e:
                 return self._blocked_result(test, str(e),
-                    url=url, method=method, sent_payload=payload)
+                    url=raw_url, method=method, sent_payload=payload)
 
     def _test_malware(self, test: SecurityTestCase, host: str,
                       http_port: int, https_port: int) -> SecurityTestResult:
@@ -2262,16 +2273,32 @@ class SecurityTestEngine:
                 f'HTTP {resp.status_code} — blocked by firewall', resp.status_code,
                 resp=resp, url=url, method=method, sent_payload=sent_payload)
 
+        # Firewall may return RST as a redirect or non-standard status
+        if resp.status_code in (502, 504):
+            return self._blocked_result(test,
+                f'HTTP {resp.status_code} — upstream blocked by firewall', resp.status_code,
+                resp=resp, url=url, method=method, sent_payload=sent_payload)
+
         if resp.status_code == 200:
-            body = resp.text
+            body = resp.text or ''
             if payload_marker and payload_marker in body:
                 return self._passthrough_result(test, resp.status_code,
                     'Payload echoed back — attack passed through firewall',
                     resp=resp, url=url, method=method, sent_payload=sent_payload)
-            if '/echo' in (resp.url or '') or 'Echo Response' in body:
-                return self._passthrough_result(test, resp.status_code,
-                    'Echo server responded — attack passed through',
-                    resp=resp, url=url, method=method, sent_payload=sent_payload)
+            # If echo server responded but the payload is NOT in the body,
+            # the firewall likely stripped/modified the payload before forwarding
+            if 'Echo Response' in body:
+                # Check if the echo payload div is empty or different from what we sent
+                if payload_marker and payload_marker not in body:
+                    return self._blocked_result(test,
+                        'Echo server responded but payload was stripped/modified — firewall sanitized the request',
+                        resp.status_code, resp=resp, url=url, method=method, sent_payload=sent_payload)
+
+        # Empty response body with 200 can indicate firewall intervention
+        if resp.status_code == 200 and not (resp.text or '').strip():
+            return self._blocked_result(test,
+                'HTTP 200 with empty body — firewall may have stripped the response',
+                resp.status_code, resp=resp, url=url, method=method, sent_payload=sent_payload)
 
         return self._passthrough_result(test, resp.status_code,
             f'HTTP {resp.status_code} — not blocked',
