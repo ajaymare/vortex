@@ -1511,19 +1511,22 @@ class SecurityTestEngine:
 
         elif test.id == 'c2_callback':
             url = f'http://{host}:{http_port}/echo'
-            c2_data = 'aWQgLWE7dW5hbWUgLWE7aWZjb25maWc='
+            # Use Gh0st RAT magic header bytes — PAN-OS Threat ID 10825
+            # Gh0st RAT starts TCP with 5-byte magic "Gh0st" + 4-byte length
+            c2_data = 'Gh0st\x00\x00\x00\x48\x00\x00\x00\x36\x78\x9c' + 'A' * 50
             payload = c2_data
             try:
                 resp = requests.post(url, data=c2_data,
                     headers={
                         'User-Agent': 'Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)',
+                        'Content-Type': 'application/octet-stream',
                         'X-Request-ID': 'deadbeef-cafe-babe-feed-c0ffee000001',
-                        'Cookie': 'session=YWRtaW46cGFzc3dvcmQ=',
                     }, timeout=10)
                 # If 200, C2 callback went through — the echo server will echo it back
                 if resp.status_code == 200:
                     return self._passthrough_result(test, resp.status_code,
-                        'C2 beacon callback POST accepted — Anti-Spyware did not detect C2 pattern',
+                        'C2 beacon callback POST accepted (HTTP 200) — Anti-Spyware may have alerted but did not block. '
+                        'Change Anti-Spyware profile action from "alert" to "reset-both" for spyware severity medium/high/critical',
                         resp=resp, url=url, method='POST', sent_payload=payload)
                 return self._analyze_response(test, resp, '',
                     url=url, method='POST', sent_payload=payload)
@@ -1533,16 +1536,22 @@ class SecurityTestEngine:
 
         elif test.id == 'malicious_ua':
             url = f'http://{host}:{http_port}/echo?payload=test'
-            payload = 'User-Agent: Wget/1.0 (CobaltStrike)'
+            # Use known malicious User-Agents from PAN-OS Threat Vault
+            # "Cobalt Strike" UA pattern (Threat ID 86294) + ZXShell (Threat ID 13020)
+            payload = 'User-Agent: Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; WOW64; Trident/5.0; NativeHost)'
             try:
-                resp = requests.get(url,
-                    headers={'User-Agent': 'Wget/1.0 (CobaltStrike)'},
-                    timeout=10)
+                # Send with multiple known-bad UAs to maximize detection
+                resp = _raw_http_get(host, http_port, '/echo?payload=test',
+                    extra_headers={
+                        'User-Agent': 'Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; WOW64; Trident/5.0; NativeHost)',
+                        'Cookie': 'SESSIONID=' + 'A' * 128,
+                    }, timeout=10)
                 # Payload is in the User-Agent header, not the body.
                 # If we get a 200, the firewall did NOT detect the malicious UA.
                 if resp.status_code == 200:
                     return self._passthrough_result(test, resp.status_code,
-                        'Request with CobaltStrike User-Agent succeeded — Anti-Spyware did not detect malicious UA',
+                        'Request with CobaltStrike User-Agent accepted (HTTP 200) — Anti-Spyware may have alerted but did not block. '
+                        'Change Anti-Spyware profile action from "alert" to "reset-both" for spyware severity medium/high/critical',
                         resp=resp, url=url, method='GET', sent_payload=payload)
                 return self._analyze_response(test, resp, '',
                     url=url, method='GET', sent_payload=payload)
@@ -1567,7 +1576,8 @@ class SecurityTestEngine:
                 # If we get 200, the C2 beacon callback was not blocked
                 if resp.status_code == 200:
                     return self._passthrough_result(test, resp.status_code,
-                        'Cobalt Strike beacon POST to /submit.php accepted — Anti-Spyware did not detect C2 pattern',
+                        'Cobalt Strike beacon POST to /submit.php accepted (HTTP 200) — Anti-Spyware may have alerted but did not block. '
+                        'Change Anti-Spyware profile action from "alert" to "reset-both" for spyware severity medium/high/critical',
                         resp=resp, url=url, method='POST', sent_payload=payload)
                 return self._analyze_response(test, resp, '',
                     url=url, method='POST', sent_payload=payload)
@@ -1591,7 +1601,8 @@ class SecurityTestEngine:
                 # If we get a 200 response, the C2 beacon POST went through undetected
                 if resp.status_code == 200:
                     return self._passthrough_result(test, resp.status_code,
-                        'Metasploit reverse HTTP POST with PE payload accepted — Anti-Spyware did not detect C2 pattern',
+                        'Metasploit reverse HTTP POST with PE payload accepted (HTTP 200) — Anti-Spyware may have alerted but did not block. '
+                        'Change Anti-Spyware profile action from "alert" to "reset-both" for spyware severity medium/high/critical',
                         resp=resp, url=url, method='POST', sent_payload=payload)
                 return self._analyze_response(test, resp, '',
                     url=url, method='POST', sent_payload=payload)
@@ -1618,7 +1629,8 @@ class SecurityTestEngine:
                     f'DNS C2 queries intercepted ({blocked_count} blocked, {sinkholed_count} sinkholed): {detail_str}',
                     url=f'DNS TXT @{host}', method='DNS', sent_payload=payload)
             return self._passthrough_result(test, 0,
-                f'DNS C2 queries resolved — not intercepted: {detail_str}',
+                f'DNS C2 queries resolved — not blocked (may be alert-only): {detail_str}. '
+                'Change Anti-Spyware DNS signature action from "alert" to "sinkhole" for C2 domains',
                 url=f'DNS TXT @{host}', method='DNS', sent_payload=payload)
 
         elif test.id == 'c2_icmp_tunnel':
@@ -1672,7 +1684,8 @@ class SecurityTestEngine:
                     f'HTTP beacon blocked ({blocked}/3 callbacks intercepted)',
                     url=url, method='POST', sent_payload=payload)
             return self._passthrough_result(test, 200,
-                f'HTTP beacon passed through ({passed}/3 callbacks succeeded)',
+                f'HTTP beacon passed through ({passed}/3 callbacks succeeded) — Anti-Spyware may have alerted but did not block. '
+                'Change Anti-Spyware profile action from "alert" to "reset-both" for spyware severity medium/high/critical',
                 url=url, method='POST', sent_payload=payload)
 
         return self._error_result(test, f'Unknown malware test: {test.id}')
@@ -2711,24 +2724,27 @@ class SecurityTestEngine:
 
         if test.id == 'spy_gh0st':
             url = f'http://{host}:{http_port}/echo'
+            # Gh0st RAT uses a raw TCP connection starting with 5-byte magic "Gh0st"
+            # followed by packet length fields. Send as POST body with binary content
+            # to preserve the magic bytes on the wire (URL encoding would mangle them).
+            gh0st_body = b'Gh0st\xab\xcd\x00\x00\x00\x48\x00\x00\x00\x36\x78\x9c' + b'\x00' * 40
             try:
-                resp = _raw_http_get(host, http_port,
-                    f'/echo?payload={payload}',
-                    extra_headers={
+                resp = requests.post(url, data=gh0st_body,
+                    headers={
                         'User-Agent': 'Mozilla/4.0 (compatible; Gh0st RAT client)',
+                        'Content-Type': 'application/octet-stream',
                     }, timeout=10)
                 if resp.status_code == 200:
                     return self._passthrough_result(test, resp.status_code,
-                        'Gh0st RAT callback accepted — Anti-Spyware did not detect known RAT User-Agent and payload pattern',
-                        url=url, method='GET', sent_payload=payload)
+                        'Gh0st RAT callback accepted — Anti-Spyware did not detect known RAT magic bytes and User-Agent pattern',
+                        resp=resp, url=url, method='POST', sent_payload=payload)
                 return self._blocked_result(test,
                     f'HTTP {resp.status_code} — Gh0st RAT pattern blocked',
-                    resp.status_code, url=url, method='GET', sent_payload=payload)
-            except (socket.timeout, ConnectionResetError, ConnectionRefusedError,
-                    BrokenPipeError, OSError) as e:
+                    resp.status_code, url=url, method='POST', sent_payload=payload)
+            except (requests.ConnectionError, requests.Timeout, OSError) as e:
                 return self._blocked_result(test,
                     f'Connection blocked — Anti-Spyware detected Gh0st RAT callback: {e}',
-                    url=url, method='GET', sent_payload=payload)
+                    url=url, method='POST', sent_payload=payload)
 
         elif test.id == 'spy_njrat':
             url = f'http://{host}:{http_port}/echo'
