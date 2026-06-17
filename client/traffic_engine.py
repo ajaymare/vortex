@@ -47,7 +47,7 @@ REALWORLD_PROFILES = {
                 'dscp': 'AF21'}},
             {'protocol': 'ext_https', 'flow_id': 'rw', 'config': {
                 'browser_mode': True, 'interval': 5, 'ignore_ssl': True,
-                'urls': 'https://www.google.com\nhttps://outlook.office365.com\nhttps://drive.google.com\nhttps://www.salesforce.com',
+                'urls': 'https://www.google.com\nhttps://www.microsoft.com\nhttps://www.github.com\nhttps://www.wikipedia.org',
                 'dscp': 'AF21'}},
             {'protocol': 'http_plain', 'flow_id': 'rw', 'config': {
                 'browser_mode': True, 'interval': 5,
@@ -68,7 +68,7 @@ REALWORLD_PROFILES = {
                 'dscp': 'AF21'}},
             {'protocol': 'ext_https', 'flow_id': 'rw', 'config': {
                 'browser_mode': True, 'interval': 5, 'ignore_ssl': True,
-                'urls': 'https://www.google.com\nhttps://teams.microsoft.com\nhttps://zoom.us\nhttps://outlook.office365.com',
+                'urls': 'https://www.google.com\nhttps://www.microsoft.com\nhttps://www.github.com\nhttps://www.amazon.com',
                 'dscp': 'AF21'}},
             {'protocol': 'dns', 'flow_id': 'rw', 'config': {
                 'interval': 0.3, 'dscp': 'CS6',
@@ -89,7 +89,7 @@ REALWORLD_PROFILES = {
                 'dscp': 'AF21'}},
             {'protocol': 'ext_https', 'flow_id': 'rw', 'config': {
                 'browser_mode': True, 'interval': 4, 'ignore_ssl': True,
-                'urls': 'https://www.google.com\nhttps://outlook.office365.com\nhttps://drive.google.com\nhttps://www.salesforce.com\nhttps://aws.amazon.com',
+                'urls': 'https://www.google.com\nhttps://www.microsoft.com\nhttps://www.github.com\nhttps://www.wikipedia.org\nhttps://www.amazon.com',
                 'dscp': 'AF21'}},
             {'protocol': 'http_plain', 'flow_id': 'rw', 'config': {
                 'browser_mode': True, 'interval': 5,
