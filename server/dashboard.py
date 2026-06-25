@@ -676,14 +676,14 @@ function toggleAdvanced(clientName, proto) {
 }
 // ─── Protocol Definitions ────────────────────────────────────
 const DSCP_OPTIONS = ['BE','CS1','AF11','AF12','AF13','CS2','AF21','AF22','AF23','CS3','AF31','AF32','AF33','CS4','AF41','AF42','AF43','CS5','VA','EF','CS6','CS7'];
-const ADVANCED_KEYS = ['browser_mode', 'browser_type', 'proxy', 'dscp', 'rate_pps', 'burst_enabled', 'burst_count', 'burst_pause', 'target_cps', 'concurrency', 'ramp_enabled', 'ramp_start_cps', 'ramp_steps'];
+const ADVANCED_KEYS = ['browser_mode', 'browser_type', 'proxy', 'dscp', 'dscp_video', 'dscp_audio', 'rate_pps', 'burst_enabled', 'burst_count', 'burst_pause', 'target_cps', 'concurrency', 'ramp_enabled', 'ramp_start_cps', 'ramp_steps'];
 
 const PROTOCOLS = {
     https: { name: 'HTTPS', fields: [
         { key: 'highcps_mode', label: 'High-CPS Mode', type: 'checkbox', default: true },
         { key: 'target_cps', label: 'Target CPS', type: 'number', default: 100, step: 10 },
         { key: 'concurrency', label: 'Concurrency', type: 'number', default: 50, step: 10 },
-        { key: 'ramp_enabled', label: 'Ramp Up', type: 'checkbox', default: false },
+        { key: 'ramp_enabled', label: 'Ramp Up', type: 'checkbox', default: true },
         { key: 'ramp_start_cps', label: 'Ramp Start CPS', type: 'number', default: 10, step: 10 },
         { key: 'ramp_steps', label: 'Ramp Steps', type: 'number', default: 5, step: 1 },
         { key: 'url', label: 'URL', type: 'text', default: 'https://server/' },
@@ -693,7 +693,7 @@ const PROTOCOLS = {
         { key: 'http2', label: 'HTTP/2', type: 'checkbox', default: false },
         { key: 'ignore_ssl', label: 'Ignore SSL', type: 'checkbox', default: true },
         { key: 'upload', label: 'Upload Mode', type: 'checkbox', default: false },
-        { key: 'random_size', label: 'Random Size', type: 'checkbox', default: false },
+        { key: 'random_size', label: 'Random Size', type: 'checkbox', default: true },
         { key: 'browser_mode', label: 'Browser Mode', type: 'checkbox', default: false },
         { key: 'browser_type', label: 'Browser', type: 'select', options: ['Random','Chromium','Firefox','WebKit'], default: 'Random' },
         { key: 'proxy', label: 'Proxy', type: 'select', options: ['Global','On','Off','Custom'], default: 'Global' },
@@ -716,16 +716,14 @@ const PROTOCOLS = {
         { key: 'flows', label: 'Flows', type: 'number', default: 1 },
         { key: 'duration', label: 'Duration (s)', type: 'number', default: 900 },
     ]},
-    hping3: { name: 'hping3', fields: [
-        { key: 'host', label: 'Host', type: 'text', default: 'server' },
-        { key: 'mode', label: 'Mode', type: 'select', options: ['ICMP','TCP SYN','TCP ACK','TCP FIN','UDP','Traceroute'], default: 'ICMP' },
-        { key: 'port', label: 'Dest Port', type: 'number', default: 0 },
-        { key: 'packet_size', label: 'Data Size (B)', type: 'number', default: 64 },
-        { key: 'count', label: 'Count (0=cont)', type: 'number', default: 0 },
-        { key: 'interval', label: 'Interval (s)', type: 'number', default: 1, step: 0.1 },
-        { key: 'flood', label: 'Flood Mode', type: 'checkbox', default: false },
-        { key: 'ttl', label: 'TTL', type: 'number', default: 64 },
-        { key: 'dscp', label: 'DSCP', type: 'select', options: DSCP_OPTIONS, default: 'BE' },
+    multicast: { name: 'Multicast', fields: [
+        { key: 'host', label: 'Server Host', type: 'text', default: 'server' },
+        { key: 'group', label: 'Multicast Group', type: 'text', default: '239.1.1.1' },
+        { key: 'port', label: 'Port', type: 'number', default: 5004 },
+        { key: 'ttl', label: 'TTL', type: 'number', default: 32 },
+        { key: 'packet_size', label: 'Packet Size (B)', type: 'number', default: 1200, step: 64 },
+        { key: 'target_pps', label: 'Target PPS', type: 'number', default: 100, step: 10 },
+        { key: 'dscp', label: 'DSCP', type: 'select', options: DSCP_OPTIONS, default: 'AF41' },
         { key: 'flows', label: 'Flows', type: 'number', default: 1 },
         { key: 'duration', label: 'Duration (s)', type: 'number', default: 900 },
     ]},
@@ -733,7 +731,7 @@ const PROTOCOLS = {
         { key: 'highcps_mode', label: 'High-CPS Mode', type: 'checkbox', default: true },
         { key: 'target_cps', label: 'Target CPS', type: 'number', default: 100, step: 10 },
         { key: 'concurrency', label: 'Concurrency', type: 'number', default: 50, step: 10 },
-        { key: 'ramp_enabled', label: 'Ramp Up', type: 'checkbox', default: false },
+        { key: 'ramp_enabled', label: 'Ramp Up', type: 'checkbox', default: true },
         { key: 'ramp_start_cps', label: 'Ramp Start CPS', type: 'number', default: 10, step: 10 },
         { key: 'ramp_steps', label: 'Ramp Steps', type: 'number', default: 5, step: 1 },
         { key: 'host', label: 'Host', type: 'text', default: 'server' },
@@ -741,7 +739,7 @@ const PROTOCOLS = {
         { key: 'method', label: 'Method', type: 'select', options: ['GET','POST'], default: 'GET' },
         { key: 'data_size_kb', label: 'Data Size (KB)', type: 'number', default: 1 },
         { key: 'interval', label: 'Interval (s)', type: 'number', default: 1, step: 0.1 },
-        { key: 'random_size', label: 'Random Size', type: 'checkbox', default: false },
+        { key: 'random_size', label: 'Random Size', type: 'checkbox', default: true },
         { key: 'browser_mode', label: 'Browser Mode', type: 'checkbox', default: false },
         { key: 'browser_type', label: 'Browser', type: 'select', options: ['Random','Chromium','Firefox','WebKit'], default: 'Random' },
         { key: 'proxy', label: 'Proxy', type: 'select', options: ['Global','On','Off','Custom'], default: 'Global' },
@@ -767,15 +765,17 @@ const PROTOCOLS = {
         { key: 'flows', label: 'Flows', type: 'number', default: 1 },
         { key: 'duration', label: 'Duration (s)', type: 'number', default: 900 },
     ]},
-    udp: { name: 'UDP', fields: [
-        { key: 'host', label: 'Host', type: 'text', default: 'server' },
-        { key: 'port', label: 'Port', type: 'number', default: 5201 },
-        { key: 'packet_size', label: 'Packet Size (B)', type: 'number', default: 512, step: 64 },
-        { key: 'target_pps', label: 'Target PPS', type: 'number', default: 100, step: 10 },
-        { key: 'ramp_enabled', label: 'Ramp Up', type: 'checkbox', default: false },
-        { key: 'ramp_start_pps', label: 'Ramp Start PPS', type: 'number', default: 10, step: 10 },
-        { key: 'ramp_steps', label: 'Ramp Steps', type: 'number', default: 5, step: 1 },
-        { key: 'dscp', label: 'DSCP', type: 'select', options: DSCP_OPTIONS, default: 'BE' },
+    rtp: { name: 'RTP Audio/Video', fields: [
+        { key: 'host', label: 'Server Host', type: 'text', default: 'server' },
+        { key: 'mode', label: 'Mode', type: 'select', options: ['Video Call','Streaming','Audio Only'], default: 'Video Call' },
+        { key: 'resolution', label: 'Resolution', type: 'select', options: ['320x240','640x480','1280x720','1920x1080'], default: '640x480' },
+        { key: 'video_bitrate', label: 'Video Bitrate', type: 'text', default: '1M' },
+        { key: 'audio_codec', label: 'Audio Codec', type: 'select', options: ['opus','g711'], default: 'opus' },
+        { key: 'audio_bitrate', label: 'Audio Bitrate', type: 'text', default: '64k' },
+        { key: 'video_port', label: 'Video Port', type: 'number', default: 5004 },
+        { key: 'audio_port', label: 'Audio Port', type: 'number', default: 5006 },
+        { key: 'dscp_video', label: 'DSCP Video', type: 'select', options: DSCP_OPTIONS, default: 'AF41' },
+        { key: 'dscp_audio', label: 'DSCP Audio', type: 'select', options: DSCP_OPTIONS, default: 'EF' },
         { key: 'flows', label: 'Flows', type: 'number', default: 1 },
         { key: 'duration', label: 'Duration (s)', type: 'number', default: 900 },
     ]},
@@ -785,7 +785,7 @@ const PROTOCOLS = {
         { key: 'username', label: 'Username', type: 'text', default: 'anonymous' },
         { key: 'password', label: 'Password', type: 'password', default: '' },
         { key: 'filename', label: 'Filename', type: 'select', options: ['testfile_100mb.bin'], default: 'testfile_100mb.bin' },
-        { key: 'random_size', label: 'Random File', type: 'checkbox', default: false },
+        { key: 'random_size', label: 'Random File', type: 'checkbox', default: true },
         { key: 'proxy', label: 'Proxy', type: 'select', options: ['Global','On','Off','Custom'], default: 'Global' },
         { key: 'dscp', label: 'DSCP', type: 'select', options: DSCP_OPTIONS, default: 'BE' },
         { key: 'rate_pps', label: 'Rate (pps)', type: 'number', default: 0, step: 1 },
@@ -1121,8 +1121,6 @@ async function renderClientTab(name) {
         '<span class="proto-badge" id="c-' + name + '-rw-badge">Stopped</span>' +
         '<button class="btn btn-start" onclick="clientStartRealWorld(\'' + name + '\')" style="padding:3px 10px;font-size:10px">Start</button>' +
         '<button class="btn btn-stop" onclick="clientStopRealWorld(\'' + name + '\')" style="padding:3px 10px;font-size:10px">Stop</button>' +
-        '<button class="btn btn-secondary" onclick="clientStartRwLoop(\'' + name + '\')" id="c-' + name + '-rw-loop-btn" style="padding:3px 10px;font-size:10px">Loop All</button>' +
-        '<button class="btn btn-stop" onclick="clientStopRwLoop(\'' + name + '\')" id="c-' + name + '-rw-loop-stop" style="padding:3px 10px;font-size:10px;display:none">Stop Loop</button>' +
         '<span class="chevron" id="chevron-c-' + name + '-realworld">&#9660;</span></div></div>' +
         '<div class="card-body" id="section-c-' + name + '-realworld">' +
         '<div style="padding:8px;background:var(--bg-sub);border:1px solid var(--border);border-radius:6px">' +
@@ -1131,7 +1129,8 @@ async function renderClientTab(name) {
         '<label style="font-size:11px;color:var(--text-secondary)">Profile</label>' +
         '<select id="c-' + name + '-rw-profile" style="flex:1;min-width:180px;padding:5px 8px;font-size:12px;background:var(--bg-input);color:var(--text-primary);border:1px solid var(--border);border-radius:4px" onchange="clientUpdateRwDesc(\'' + name + '\')"></select>' +
         '<label style="font-size:11px;color:var(--text-secondary)">Duration (s)</label>' +
-        '<input type="number" id="c-' + name + '-rw-duration" value="900" min="30" step="30" style="width:80px;padding:5px 8px;font-size:12px;background:var(--bg-input);color:var(--text-primary);border:1px solid var(--border);border-radius:4px"></div>' +
+        '<input type="number" id="c-' + name + '-rw-duration" value="900" min="30" step="30" style="width:80px;padding:5px 8px;font-size:12px;background:var(--bg-input);color:var(--text-primary);border:1px solid var(--border);border-radius:4px">' +
+        '<label style="font-size:11px;color:var(--text-secondary);display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="c-' + name + '-rw-loop" style="cursor:pointer"> Loop</label></div>' +
         '<div id="c-' + name + '-rw-desc" style="margin-top:6px;font-size:11px;color:var(--text-secondary)"></div>' +
         '<div id="c-' + name + '-rw-protos" style="margin-top:4px;font-size:11px;display:flex;gap:4px;flex-wrap:wrap"></div></div>' +
         '<div id="c-' + name + '-rw-stats" style="display:none;margin-top:8px">' +
@@ -1283,28 +1282,33 @@ function clientUpdateRwDesc(clientName) {
 }
 
 async function clientStartRealWorld(clientName) {
-    var profile = (document.getElementById('c-' + clientName + '-rw-profile') || {}).value || 'office_worker';
-    var duration = parseInt((document.getElementById('c-' + clientName + '-rw-duration') || {}).value || 900);
-    var res = await apiPost('/api/client/' + clientName + '/realworld/start', { profile: profile, duration: duration });
-    addClientLog(clientName, '[REALWORLD] ' + (res.message || res.error || 'sent'));
-    if (res.errors && res.errors.length) {
-        for (var i = 0; i < res.errors.length; i++) addClientLog(clientName, '[REALWORLD] Error: ' + res.errors[i]);
+    var loopEl = document.getElementById('c-' + clientName + '-rw-loop');
+    var loop = loopEl ? loopEl.checked : false;
+    var totalDuration = parseInt((document.getElementById('c-' + clientName + '-rw-duration') || {}).value || 900);
+
+    if (loop) {
+        var profiles = _clientRwProfiles[clientName] || {};
+        var profileCount = Object.keys(profiles).length || 3;
+        var perProfile = Math.max(60, Math.floor(totalDuration / profileCount));
+        var res = await apiPost('/api/client/' + clientName + '/realworld/loop/start', { duration: perProfile });
+        addClientLog(clientName, '[REALWORLD] ' + (res.message || res.error || 'sent'));
+    } else {
+        var profile = (document.getElementById('c-' + clientName + '-rw-profile') || {}).value || 'office_worker';
+        var res = await apiPost('/api/client/' + clientName + '/realworld/start', { profile: profile, duration: totalDuration });
+        addClientLog(clientName, '[REALWORLD] ' + (res.message || res.error || 'sent'));
+        if (res.errors && res.errors.length) {
+            for (var i = 0; i < res.errors.length; i++) addClientLog(clientName, '[REALWORLD] Error: ' + res.errors[i]);
+        }
     }
 }
 
 async function clientStopRealWorld(clientName) {
+    var loopEl = document.getElementById('c-' + clientName + '-rw-loop');
+    var loop = loopEl ? loopEl.checked : false;
+    if (loop) {
+        await apiPost('/api/client/' + clientName + '/realworld/loop/stop', {});
+    }
     var res = await apiPost('/api/client/' + clientName + '/realworld/stop', {});
-    addClientLog(clientName, '[REALWORLD] ' + (res.message || res.error || 'sent'));
-}
-
-async function clientStartRwLoop(clientName) {
-    var duration = parseInt((document.getElementById('c-' + clientName + '-rw-duration') || {}).value || 300);
-    var res = await apiPost('/api/client/' + clientName + '/realworld/loop/start', { duration: duration });
-    addClientLog(clientName, '[REALWORLD] ' + (res.message || res.error || 'sent'));
-}
-
-async function clientStopRwLoop(clientName) {
-    var res = await apiPost('/api/client/' + clientName + '/realworld/loop/stop', {});
     addClientLog(clientName, '[REALWORLD] ' + (res.message || res.error || 'sent'));
 }
 
@@ -1315,22 +1319,17 @@ async function clientPollRealWorldStatus(clientName) {
         var badge = document.getElementById('c-' + clientName + '-rw-badge');
         var statsDiv = document.getElementById('c-' + clientName + '-rw-stats');
 
-        // Update loop button states
-        var loopBtn = document.getElementById('c-' + clientName + '-rw-loop-btn');
-        var loopStopBtn = document.getElementById('c-' + clientName + '-rw-loop-stop');
+        // Update loop info
         var loopInfo = document.getElementById('c-' + clientName + '-rw-loop-info');
         if (data.loop) {
-            if (loopBtn) loopBtn.style.display = 'none';
-            if (loopStopBtn) loopStopBtn.style.display = '';
             if (loopInfo) { loopInfo.style.display = ''; loopInfo.textContent = 'Cycle #' + (data.loop_cycle||0) + ' \u2014 ' + ((data.loop_profile||'').replace(/_/g,' ')); }
         } else {
-            if (loopBtn) loopBtn.style.display = '';
-            if (loopStopBtn) loopStopBtn.style.display = 'none';
             if (loopInfo) loopInfo.style.display = 'none';
         }
 
         if (data.running) {
-            if (badge) { badge.textContent = data.loop ? 'Looping' : 'Running'; badge.classList.add('running'); }
+            var profileLabel = ((data.loop_profile || data.profile || '').replace(/_/g, ' '));
+            if (badge) { badge.textContent = data.loop ? 'Looping: ' + profileLabel : 'Running'; badge.classList.add('running'); }
             if (statsDiv) statsDiv.style.display = 'block';
             var el = function(id) { return document.getElementById(id); };
             var childEl = el('c-' + clientName + '-rw-children');
